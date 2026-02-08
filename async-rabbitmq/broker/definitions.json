@@ -1,0 +1,22 @@
+{
+  "vhosts": [{"name": "/"}],
+  "users": [{"name": "guest", "password_hash": "guest", "tags": "administrator"}],
+  "permissions": [{"user": "guest", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*"}],
+  "exchanges": [
+    {"name": "orders_exchange", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false},
+    {"name": "dlx_exchange", "vhost": "/", "type": "fanout", "durable": true, "auto_delete": false}
+  ],
+  "queues": [
+    {
+      "name": "inventory_queue", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": {"x-dead-letter-exchange": "dlx_exchange"}
+    },
+    {"name": "notification_queue", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {}},
+    {"name": "dlq_queue", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {}}
+  ],
+  "bindings": [
+    {"source": "orders_exchange", "vhost": "/", "destination": "inventory_queue", "destination_type": "queue", "routing_key": "order.placed"},
+    {"source": "orders_exchange", "vhost": "/", "destination": "notification_queue", "destination_type": "queue", "routing_key": "inventory.reserved"},
+    {"source": "dlx_exchange", "vhost": "/", "destination": "dlq_queue", "destination_type": "queue", "routing_key": ""}
+  ]
+}

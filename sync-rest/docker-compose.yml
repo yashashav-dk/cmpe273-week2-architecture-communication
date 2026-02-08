@@ -1,0 +1,38 @@
+services:
+  order:
+    build: ./order_service
+    ports:
+      - "8000:8000"
+    environment:
+      - INVENTORY_URL=http://inventory:8001
+      - NOTIFICATION_URL=http://notification:8002
+    depends_on:
+      inventory:
+        condition: service_healthy
+      notification:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  inventory:
+    build: ./inventory_service
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  notification:
+    build: ./notification_service
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
