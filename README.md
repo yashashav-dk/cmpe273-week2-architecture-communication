@@ -2,65 +2,34 @@
 
 **CMPE 273 | Week 2 — Architecture and Communication**
 
-The same campus food ordering workflow implemented in three communication styles to demonstrate their tradeoffs:
+Same "campus food ordering" workflow implemented three ways: synchronous REST, async messaging (RabbitMQ), and streaming (Kafka). Each part is self-contained with its own `docker-compose.yml`, services, and tests.
 
-| Part | Model | Key Insight |
-|---|---|---|
-| A | Synchronous REST | Blocking calls — simple but fragile under latency/failure |
-| B | Async Messaging (RabbitMQ) | Decoupled via queues — resilient but eventually consistent |
-| C | Streaming (Kafka) | Persistent log — replayable, scalable, operationally heavier |
+**Tech Stack:** Python 3.11, FastAPI, httpx, pika, confluent-kafka, Docker Compose
 
-## Tech Stack
-
-Python 3.11, FastAPI, httpx, pika, confluent-kafka, Docker Compose
-
-## Quick Start
-
-Each part is self-contained. Pick one and run:
+## How to Run
 
 ```bash
-# Part A
+# Part A — Sync REST
 cd sync-rest/tests && bash run_tests.sh
 
-# Part B
+# Part B — Async RabbitMQ
 cd async-rabbitmq/tests && bash run_tests.sh
 
-# Part C
+# Part C — Streaming Kafka
 cd streaming-kafka/tests && bash run_tests.sh
-```
-
-## Repo Structure
-
-```
-common/                  Shared UUID generator
-sync-rest/               Part A — Synchronous REST
-async-rabbitmq/          Part B — Async Messaging
-streaming-kafka/         Part C — Event Streaming
-screenshots/             Test output evidence
 ```
 
 ---
 
 ## Part A: Synchronous REST
 
-### Communication Flow
-
-```
-Client --> POST /order --> OrderService
-             |-> POST /reserve --> InventoryService (blocks)
-             |-> POST /send   --> NotificationService (blocks)
-             <-- 201 Created
-```
-
-Every call blocks. If InventoryService is slow, the entire request is slow. If it's down, the order fails immediately.
+`POST /order` → OrderService calls `POST /reserve` on InventoryService (blocks), then `POST /send` on NotificationService (blocks), returns 201.
 
 ### Test Results
 
-Three tests demonstrate synchronous communication tradeoffs:
-
-- **Baseline Latency** — 20 sequential orders, mean/P95/P99 round-trip times
-- **Delay Injection** — 2s delay on InventoryService propagates directly to order latency (~10ms → ~2s)
-- **Failure Injection** — InventoryService forced 500 → OrderService returns 422 for every request
+- **Baseline latency:** 20 sequential orders — Mean: 0.012s, P95: 0.021s, P99: 0.021s
+- **Delay injection:** 2s delay on InventoryService → order latency jumps from ~10ms to ~2s. The delay propagates directly because the call is blocking — OrderService cannot respond until InventoryService completes.
+- **Failure injection:** InventoryService returns 500 → OrderService returns 422 for every request. Tight coupling means one broken service breaks the entire flow.
 
 ![Sync REST Tests](screenshots/sync-rest/sync-rest-tests.png)
 
@@ -68,42 +37,29 @@ Three tests demonstrate synchronous communication tradeoffs:
 
 ## Part B: Async Messaging (RabbitMQ)
 
-### Communication Flow
-
-```
-Client --> POST /order --> OrderService
-             <-- 202 Accepted (immediate)
-             |-> publishes "OrderPlaced" to exchange
-
-InventoryService consumes "OrderPlaced"
-  -> reserves stock
-  -> publishes "InventoryReserved" or "InventoryFailed"
-
-NotificationService consumes "InventoryReserved"
-  -> logs confirmation
-```
-
-The client gets an immediate 202. Processing happens asynchronously through message queues.
+`POST /order` → OrderService saves order, publishes `OrderPlaced` to topic exchange, returns 202 immediately. InventoryService consumes `OrderPlaced`, reserves stock, publishes `InventoryReserved` or `InventoryFailed`. NotificationService consumes `InventoryReserved` and logs confirmation.
 
 ### Backlog Drain
 
-InventoryService is stopped, 20 orders are published (all return 202 immediately). The queue absorbs the backlog:
+InventoryService stopped → 20 orders published (all return 202) → messages queue up in `inventory_queue`:
 
 ![Backlog — 20 messages queued](screenshots/async-rabbitmq/backlog-queue-full.png)
 
-InventoryService is restarted. All queued messages drain and process:
+InventoryService restarted → all messages drain and process:
 
 ![Backlog — drained to 0](screenshots/async-rabbitmq/backlog-queue-drained.png)
 
 ### Idempotency
 
-The same message (same `message_id`) is published twice. Stock is only decremented once — the `seen_message_ids` set prevents duplicate processing.
+Same message (same `message_id`) published twice to `inventory_queue`. Stock decremented only once (delta = 1).
+
+**Strategy:** InventoryService maintains a `seen_message_ids: set`. Before processing, it checks if the `message_id` has been seen — if so, it ACKs the message without processing. This prevents double-reservation on redelivery.
 
 ![Idempotency](screenshots/async-rabbitmq/idempotency.png)
 
-### Dead Letter Queue
+### Dead Letter Queue (Poison Message Handling)
 
-A malformed message is published to the inventory queue. It gets `nack`'d and routed to the DLQ — poison messages don't block the queue.
+Malformed message published to `inventory_queue` → InventoryService calls `basic_nack(requeue=False)` → message routed to DLQ via `dlx_exchange` (dead-letter exchange).
 
 ![DLQ Test](screenshots/async-rabbitmq/dlq.png)
 
@@ -111,85 +67,36 @@ A malformed message is published to the inventory queue. It gets `nack`'d and ro
 
 ### RabbitMQ Management UI
 
-The RabbitMQ management dashboard (localhost:15672) shows the exchange topology, queue depths, and message rates.
-
 ![RabbitMQ UI](screenshots/async-rabbitmq/rabbitmq-ui.png)
 
 ---
 
 ## Part C: Streaming (Kafka)
 
-### Communication Flow
+Producer publishes `OrderPlaced` events to `order-events` topic. InventoryConsumer (group: `inventory-group`) consumes, reserves stock, produces to `inventory-events`. AnalyticsConsumer (group: `analytics-group`) consumes both topics, computes orders/min and failure rate, exposes `GET /metrics`.
 
-```
-Producer --> publishes OrderPlaced to "order-events"
-
-InventoryConsumer (group: "inventory-group")
-  -> consumes "order-events"
-  -> reserves stock
-  -> publishes to "inventory-events"
-
-AnalyticsConsumer (group: "analytics-group")
-  -> consumes "order-events" AND "inventory-events"
-  -> computes orders/min, failure rate
-  -> exposes GET /metrics
-```
-
-Two independent consumer groups read the same event stream for different purposes. Events are persistent and replayable.
-
-### Bulk Produce — 10,000 Events
-
-10,000 order events produced and processed through both consumers. The metrics report shows throughput and stock depletion.
+### 10,000 Events — Metrics Report
 
 ![Bulk Produce](screenshots/streaming-kafka/bulk-produce.png)
 
+Full metrics report auto-generated at [`streaming-kafka/tests/metrics_report.md`](streaming-kafka/tests/metrics_report.md).
+
 ### Consumer Lag
 
-AnalyticsConsumer is throttled (0.1s per message), then 1,000 events are produced. The lag table shows committed offsets falling behind high watermarks — demonstrating that consumers process at their own pace.
+AnalyticsConsumer throttled at 0.1s/message, 1,000 events produced. Committed offsets fall behind high watermarks — consumers process at their own pace independently.
 
 ![Consumer Lag](screenshots/streaming-kafka/consumer-lag.png)
 
 ### Replay Evidence
 
-Offsets are reset to the beginning. Metrics drop to ~0, then climb back as all events are reprocessed from the log. The final totals match the original — proving the event log is a source of truth that can rebuild state.
+Consumer offsets reset to beginning → metrics cleared → all events reprocessed from the log → totals match original.
 
-| Metric | Before | At Reset | After |
-|---|---|---|---|
-| Total orders | 11,000 | 36 | 11,000 |
+| Metric | Before | After |
+|---|---|---|
+| Total orders | 11,000 | 11,000 |
+| Failures | 0 | 0 |
+| Result | — | CONSISTENT |
 
-![Replay Progress](screenshots/streaming-kafka/replay-evidence.png)
+This works because Kafka retains the event log. Unlike RabbitMQ where consumed messages are gone, Kafka consumers can seek to any offset and rebuild state from the stream.
 
-### Metrics Report
-
-A full metrics report is auto-generated at `streaming-kafka/tests/metrics_report.md` after each test run.
-
----
-
-## Key Tradeoffs
-
-| Dimension | Sync REST | Async RabbitMQ | Streaming Kafka |
-|---|---|---|---|
-| Latency | Immediate response | Fire-and-forget (202) | Fire-and-forget (201) |
-| Coupling | Tight — caller blocks | Loose — queue decouples | Loose — log decouples |
-| Failure handling | Cascading failures | Queue absorbs outages | Log persists through failures |
-| Data replay | Not possible | Not possible (consumed = gone) | Replay from any offset |
-| Duplicate handling | N/A (request-response) | Needs message-ID dedup | Consumer offset management |
-| Operational cost | Low | Medium (broker) | High (Zookeeper + broker + partitions) |
-| Best for | Simple CRUD, low latency needs | Task queues, background jobs | Event sourcing, analytics, audit logs |
-
----
-
-## Screenshots Checklist
-
-Use this as a guide for which screenshots to capture:
-
-- [x] `screenshots/sync-rest/sync-rest-tests.png` — All three tests: baseline latency, delay injection, failure injection
-- [x] `screenshots/async-rabbitmq/backlog-queue-full.png` — 20 messages queued while inventory down
-- [x] `screenshots/async-rabbitmq/backlog-queue-drained.png` — All messages drained after restart
-- [x] `screenshots/async-rabbitmq/idempotency.png` — Stock delta = 1 after duplicate publish
-- [x] `screenshots/async-rabbitmq/dlq.png` — DLQ message count >= 1
-- [x] `screenshots/async-rabbitmq/dlq-ui.png` — DLQ with 1 message in RabbitMQ UI
-- [x] `screenshots/async-rabbitmq/rabbitmq-ui.png` — Management dashboard showing queues/exchanges
-- [x] `screenshots/streaming-kafka/bulk-produce.png` — 10k events metrics report
-- [x] `screenshots/streaming-kafka/consumer-lag.png` — Per-partition lag table
-- [x] `screenshots/streaming-kafka/replay-evidence.png` — Before/reset/after comparison + progress
+![Replay Evidence](screenshots/streaming-kafka/replay-evidence.png)
