@@ -2,6 +2,8 @@
 
 **CMPE 273 | Week 2 — Architecture and Communication**
 
+**Team:** Atharva Mokashi, Nikhil Raj Singh, Prathamesh Sawant, Yashashav Devalapalli Kamalraj
+
 Same "campus food ordering" workflow implemented three ways: synchronous REST, async messaging (RabbitMQ), and streaming (Kafka). Each part is self-contained with its own `docker-compose.yml`, services, and tests.
 
 **Tech Stack:** Python 3.11, FastAPI, httpx, pika, confluent-kafka, Docker Compose
