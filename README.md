@@ -54,23 +54,15 @@ Client --> POST /order --> OrderService
 
 Every call blocks. If InventoryService is slow, the entire request is slow. If it's down, the order fails immediately.
 
-### Baseline Latency
+### Test Results
 
-20 sequential orders with no faults — shows the inherent round-trip cost of synchronous chaining.
+Three tests demonstrate synchronous communication tradeoffs:
 
-![Baseline Latency](screenshots/sync-rest/baseline-latency.png)
+- **Baseline Latency** — 20 sequential orders, mean/P95/P99 round-trip times
+- **Delay Injection** — 2s delay on InventoryService propagates directly to order latency (~10ms → ~2s)
+- **Failure Injection** — InventoryService forced 500 → OrderService returns 422 for every request
 
-### Delay Injection
-
-2-second artificial delay injected into InventoryService. Order latency jumps from ~10ms to ~2s — the delay propagates directly through the blocking call chain.
-
-![Delay Injection](screenshots/sync-rest/delay-injection.png)
-
-### Failure Injection
-
-InventoryService forced to return 500. OrderService returns 422 for every request — tight coupling means one broken service breaks the whole flow.
-
-![Failure Injection](screenshots/sync-rest/failure-injection.png)
+![Sync REST Tests](screenshots/sync-rest/sync-rest-tests.png)
 
 ---
 
@@ -185,9 +177,7 @@ A full metrics report is auto-generated at `streaming-kafka/tests/metrics_report
 
 Use this as a guide for which screenshots to capture:
 
-- [ ] `screenshots/sync-rest/baseline-latency.png` — Test output showing mean/P95/P99
-- [ ] `screenshots/sync-rest/delay-injection.png` — Baseline vs delayed latency comparison
-- [ ] `screenshots/sync-rest/failure-injection.png` — 422 error responses from failure injection
+- [x] `screenshots/sync-rest/sync-rest-tests.png` — All three tests: baseline latency, delay injection, failure injection
 - [ ] `screenshots/async-rabbitmq/backlog-drain.png` — Orders processing after inventory restart
 - [ ] `screenshots/async-rabbitmq/idempotency.png` — Stock delta = 1 after duplicate publish
 - [ ] `screenshots/async-rabbitmq/dlq.png` — DLQ message count >= 1
