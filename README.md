@@ -190,6 +190,6 @@ Use this as a guide for which screenshots to capture:
 - [x] `screenshots/async-rabbitmq/dlq.png` — DLQ message count >= 1
 - [x] `screenshots/async-rabbitmq/dlq-ui.png` — DLQ with 1 message in RabbitMQ UI
 - [x] `screenshots/async-rabbitmq/rabbitmq-ui.png` — Management dashboard showing queues/exchanges
-- [ ] `screenshots/streaming-kafka/bulk-produce.png` — 10k events metrics report
-- [ ] `screenshots/streaming-kafka/consumer-lag.png` — Per-partition lag table
-- [ ] `screenshots/streaming-kafka/replay-evidence.png` — Before/reset/after comparison + progress
+- [x] `screenshots/streaming-kafka/bulk-produce.png` — 10k events metrics report
+- [x] `screenshots/streaming-kafka/consumer-lag.png` — Per-partition lag table
+- [x] `screenshots/streaming-kafka/replay-evidence.png` — Before/reset/after comparison + progress
