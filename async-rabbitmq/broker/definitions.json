@@ -1,6 +1,6 @@
 {
   "vhosts": [{"name": "/"}],
-  "users": [{"name": "guest", "password_hash": "guest", "tags": "administrator"}],
+  "users": [{"name": "guest", "password_hash": "9ATv1B2tKh/YEnZZst5EQ/mlP0LxZQiybcmjjy9N6GSZr9kD", "hashing_algorithm": "rabbit_password_hashing_sha256", "tags": "administrator"}],
   "permissions": [{"user": "guest", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*"}],
   "exchanges": [
     {"name": "orders_exchange", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false},

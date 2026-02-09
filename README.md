@@ -87,9 +87,13 @@ The client gets an immediate 202. Processing happens asynchronously through mess
 
 ### Backlog Drain
 
-InventoryService is stopped, 20 orders are published (all return 202 immediately), then InventoryService is restarted. All queued messages drain and process — the queue absorbs the outage.
+InventoryService is stopped, 20 orders are published (all return 202 immediately). The queue absorbs the backlog:
 
-![Backlog Drain](screenshots/async-rabbitmq/backlog-drain.png)
+![Backlog — 20 messages queued](screenshots/async-rabbitmq/backlog-queue-full.png)
+
+InventoryService is restarted. All queued messages drain and process:
+
+![Backlog — drained to 0](screenshots/async-rabbitmq/backlog-queue-drained.png)
 
 ### Idempotency
 
@@ -101,7 +105,9 @@ The same message (same `message_id`) is published twice. Stock is only decrement
 
 A malformed message is published to the inventory queue. It gets `nack`'d and routed to the DLQ — poison messages don't block the queue.
 
-![DLQ](screenshots/async-rabbitmq/dlq.png)
+![DLQ Test](screenshots/async-rabbitmq/dlq.png)
+
+![DLQ in RabbitMQ UI — 1 message in dlq_queue](screenshots/async-rabbitmq/dlq-ui.png)
 
 ### RabbitMQ Management UI
 
@@ -178,10 +184,12 @@ A full metrics report is auto-generated at `streaming-kafka/tests/metrics_report
 Use this as a guide for which screenshots to capture:
 
 - [x] `screenshots/sync-rest/sync-rest-tests.png` — All three tests: baseline latency, delay injection, failure injection
-- [ ] `screenshots/async-rabbitmq/backlog-drain.png` — Orders processing after inventory restart
-- [ ] `screenshots/async-rabbitmq/idempotency.png` — Stock delta = 1 after duplicate publish
-- [ ] `screenshots/async-rabbitmq/dlq.png` — DLQ message count >= 1
-- [ ] `screenshots/async-rabbitmq/rabbitmq-ui.png` — Management dashboard showing queues/exchanges
+- [x] `screenshots/async-rabbitmq/backlog-queue-full.png` — 20 messages queued while inventory down
+- [x] `screenshots/async-rabbitmq/backlog-queue-drained.png` — All messages drained after restart
+- [x] `screenshots/async-rabbitmq/idempotency.png` — Stock delta = 1 after duplicate publish
+- [x] `screenshots/async-rabbitmq/dlq.png` — DLQ message count >= 1
+- [x] `screenshots/async-rabbitmq/dlq-ui.png` — DLQ with 1 message in RabbitMQ UI
+- [x] `screenshots/async-rabbitmq/rabbitmq-ui.png` — Management dashboard showing queues/exchanges
 - [ ] `screenshots/streaming-kafka/bulk-produce.png` — 10k events metrics report
 - [ ] `screenshots/streaming-kafka/consumer-lag.png` — Per-partition lag table
 - [ ] `screenshots/streaming-kafka/replay-evidence.png` — Before/reset/after comparison + progress
